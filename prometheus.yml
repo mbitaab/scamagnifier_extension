@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s  # By default, scrape targets every 15 seconds.
+
+scrape_configs:
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-prometheus-exporter:9113']  # Use the service name and port of the Nginx Prometheus Exporter

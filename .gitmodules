@@ -1,0 +1,12 @@
+[submodule "autocheckout"]
+	path = autocheckout
+	url = git@github.com:mbitaab/autocheckout.git
+[submodule "domain_feature_extractor"]
+	path = domain_feature_extractor
+	url = git@github.com:mbitaab/domain_feature_extractor.git
+[submodule "domain_classifier"]
+	path = domain_classifier
+	url = git@github.com:mbitaab/domain_classifier.git
+[submodule "shop_classifier"]
+	path = shop_classifier
+	url = git@github.com:mbitaab/classifier_shop.git

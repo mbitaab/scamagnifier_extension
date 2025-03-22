@@ -1,0 +1,181 @@
+version: '3.9'
+services:
+# **************** dns ****************
+  # dnsmasq:
+  #   image: jpillora/dnsmasq
+  #   container_name: dnsmasq
+  #   ports:
+  #     - "45552:53/tcp"
+  #     - "45553:53/udp"
+  #   volumes:
+  #     - ./dnsmasq.conf:/etc/dnsmasq.conf
+  #   cap_add:
+  #     - NET_ADMIN # Allows dnsmasq to bind to well-known ports
+
+  #   networks:
+  #     - scamagnifier-extension-network
+
+  #   restart: unless-stopped
+
+# **************** MongoDB ****************
+  mongodb:
+    image: mongo:latest
+    container_name: scamagnifier-ext-mongo
+    ports:
+      - "45560:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${SCAMAGNIFIER_EXT_MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${SCAMAGNIFIER_EXT_MONGO_USER_PASSWORD}
+      SCAMAGNIFIER_EXT_MONGO_NORMAL_USERNAME: ${SCAMAGNIFIER_EXT_MONGO_NORMAL_USERNAME}
+      SCAMAGNIFIER_EXT_MONGO_NORMAL_PASSWORD: ${SCAMAGNIFIER_EXT_MONGO_NORMAL_PASSWORD}
+      SCAMAGNIFIER_EXT_MONGO_DB: ${SCAMAGNIFIER_EXT_MONGO_DB}
+    volumes:
+      - smagnifier_extension_mongodb_volume:/data/db
+      - ./docker-entrypoint-initdb.d/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - /home/midnightgeek/scamagnifier/scamagnifier_extension/resolv.conf:/etc/resolv.conf
+    networks:
+      - scamagnifier-extension-network
+
+
+# ************** selenium grid ; port 4444 **************
+  selenium-grid:
+    image: seleniarm/standalone-chromium:latest
+    container_name: scamagnifier-ext-selenium
+    ports:
+      - "45561:4444"
+    environment:
+      SE_NODE_MAX_SESSIONS: 100
+      SE_NODE_OVERRIDE_MAX_SESSIONS: "true"
+      SE_NODE_SESSION_TIMEOUT: 1000
+      PYTHONUNBUFFERED: 1
+    shm_size: 4g
+    volumes:
+      - /dev/shm:/dev/shm
+      - /home/midnightgeek/scamagnifier/scamagnifier_extension/resolv.conf:/etc/resolv.conf
+    networks:
+      - scamagnifier-extension-network
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 64G
+        reservations:
+          cpus: '1'
+          memory: 8G
+
+# **************** NGINX ****************  
+  nginx:
+    image: nginx:latest
+    container_name: scamagnifier-ext-nginx
+    ports:
+      - "45562:80"  # You can change the host port as needed
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.htpasswd:/etc/nginx/conf.d/.htpasswd:ro
+      - /etc/amplify-agent/agent.conf:/etc/amplify-agent/agent.conf
+    networks:
+      - scamagnifier-extension-network
+    depends_on:
+      - scamagnifier-extension-server
+
+# **************** Server ****************  
+  scamagnifier-extension-server:
+    build: .
+    container_name: scamagnifier-extension-server
+    ports:
+      - "45563:1080"
+    environment:
+      MONGO_USERNAME: ${SCAMAGNIFIER_EXT_MONGO_NORMAL_USERNAME}
+      MONGO_PASSWORD: ${SCAMAGNIFIER_EXT_MONGO_NORMAL_PASSWORD}
+      MONGO_HOSTNAME: ${SCAMAGNIFIER_EXT_MONGO_HOST}
+      MONGO_PORT: ${SCAMAGNIFIER_EXT_MONGO_PORT}
+      MONGO_DB: ${SCAMAGNIFIER_EXT_MONGO_DB}
+      SCAMAGNIFIER_EXT_DOCKER_HOST: ${SCAMAGNIFIER_EXT_DOCKER_HOST}
+      SCAMAGNIFIER_EXT_DOCKER_HOST_ADDRESS: ${SCAMAGNIFIER_EXT_DOCKER_HOST_ADDRESS}
+      SCAMAGNIFIER_EXT_DOCKER_HOST_PORT: ${SCAMAGNIFIER_EXT_DOCKER_HOST_PORT}
+      SCAMAGNIFIER_EXT_V_DATA_HOST: ${SCAMAGNIFIER_EXT_V_DATA_HOST}
+      SCAMAGNIFIER_EXT_NETADAPTER_HOST: ${SCAMAGNIFIER_EXT_NETADAPTER_HOST}
+      SCAMAGNIFIER_EXT_SELENIUM_ADDRESS: ${SCAMAGNIFIER_EXT_SELENIUM_ADDRESS}
+    networks:
+      - scamagnifier-extension-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - scamagnifier_extension_data_volume:/app/data
+      - /home/midnightgeek/scamagnifier/scamagnifier_extension/resolv.conf:/etc/resolv.conf
+
+# **************** nginx-prometheus-exporter ****************
+  nginx-prometheus-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    command:
+      - '-nginx.scrape-uri=http://scamagnifier-ext-nginx:80/nginx-status'
+    ports:
+       - '45014:9113'
+    depends_on:
+      - nginx
+    networks:
+      - scamagnifier-extension-network
+
+# **************** prometheus ****************
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - scamagnifier_extension_prometheus_volume:/prometheus
+    ports:
+       - '45015:9090'
+    networks:
+      - scamagnifier-extension-network
+    depends_on:
+      - nginx-prometheus-exporter
+
+# **************** grafana ****************
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - scamagnifier_extension_graphna_volume:/var/lib/grafana
+    ports:
+      - '45016:3000'
+    networks:
+      - scamagnifier-extension-network
+    depends_on:
+      - prometheus
+
+# **************** Volume ****************
+volumes:
+  smagnifier_extension_mongodb_volume:
+    driver: local
+    driver_opts:
+      type: none
+      o: 'bind'
+      device: ${SCAMAGNIFIER_EXT_V_MONGO}
+
+  scamagnifier_extension_data_volume:
+    driver: local
+    name: scamagnifier_extension_data_volume
+    driver_opts:
+      type: none
+      o: 'bind'
+      device: ${SCAMAGNIFIER_EXT_V_DATA}
+
+  scamagnifier_extension_prometheus_volume:
+    driver: local
+    name: scamagnifier_extension_prometheus_volume
+    driver_opts:
+      type: none
+      o: 'bind'
+      device: ${SCAMAGNIFIER_EXT_P_DATA}
+
+  scamagnifier_extension_graphna_volume:
+    driver: local
+    name: scamagnifier_extension_graphna_volume
+    driver_opts:
+      type: none
+      o: 'bind'
+      device: ${SCAMAGNIFIER_EXT_G_DATA}
+
+# **************** Network ****************
+networks:
+  scamagnifier-extension-network:
+    name: scamagnifier-extension-network
+    driver: bridge
+

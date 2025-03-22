@@ -1,0 +1,49 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main  # Set the branch on which the deployment should be triggered
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'  # Fetches code and submodules
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Copy files and set up environment
+        run: |
+          scp -o StrictHostKeyChecking=no -r ./* ${SERVER_USER}@${SERVER_IP}:/home/ubuntu/scamagnifier/scamagnifier_ext/code
+          ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} << 'EOF'
+            cd /home/ubuntu/scamagnifier/scamagnifier_ext
+            cat > env.sh << 'EOL'
+            export SCAMAGNIFIER_EXT_V_MONGO='/home/ubuntu/scamagnifier/scamagnifier_ext/mongo'
+            export SCAMAGNIFIER_EXT_V_DATA='/home/ubuntu/scamagnifier/scamagnifier_ext/volume'
+            export SCAMAGNIFIER_EXT_P_DATA='/home/ubuntu/scamagnifier/scamagnifier_ext/p-data'
+            export SCAMAGNIFIER_EXT_G_DATA='/home/ubuntu/scamagnifier/scamagnifier_ext/g-data'
+            export SCAMAGNIFIER_EXT_SCAMMAGIFIER_IP=${{ secrets.SERVER_USER }}
+            export SCAMAGNIFIER_EXT_SELENIUM_ADDRESS="http://selenium-grid:4444"
+            export SCAMAGNIFIER_EXT_MONGO_ROOT_USERNAME=${{ secrets.MONGO_ROOT_USERNAME }}
+            export SCAMAGNIFIER_EXT_MONGO_USER_PASSWORD=${{ secrets.MONGO_USER_PASSWORD }}
+            export SCAMAGNIFIER_EXT_MONGO_NORMAL_USERNAME=${{ secrets.MONGO_NORMAL_USERNAME }}
+            export SCAMAGNIFIER_EXT_MONGO_NORMAL_PASSWORD=${{ secrets.MONGO_NORMAL_PASSWORD }}
+            export SCAMAGNIFIER_EXT_MONGO_HOST="mongodb"
+            export SCAMAGNIFIER_EXT_MONGO_PORT="27017"
+            export SCAMAGNIFIER_EXT_MONGO_DB=${{ secrets.MONGO_DB }}
+            export SCAMAGNIFIER_EXT_SELENIUM_USERNAME=${{ secrets.SELENIUM_USERNAME }}
+            EOL
+            source env.sh
+            ./server.sh install
+            ./server.sh run
+          EOF
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
